@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>教室座位表</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        wood: {
+                            300: '#d4a373',
+                            400: '#cc8e54',
+                            500: '#c07a3c',
+                            600: '#a36029'
+                        },
+                        chalkboard: '#2b4d3e'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #e5e7eb;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #9ca3af;
+            border-radius: 4px;
+        }
+        
+        .student-pill {
+            cursor: grab;
+            transition: all 0.2s ease;
+        }
+        .student-pill:active {
+            cursor: grabbing;
+        }
+        .student-pill.dragging {
+            opacity: 0.5;
+            transform: scale(0.95);
+        }
+
+        .seat-slot {
+            transition: all 0.2s ease;
+        }
+        .seat-slot.drag-over {
+            background-color: #dbeafe;
+            border-color: #3b82f6;
+            transform: scale(1.05);
+        }
+
+        .desk-container {
+            transition: all 0.5s ease;
+        }
+
+        /* Flipping animation support */
+        .flip-transition {
+            transition: flex-direction 0.5s ease, order 0.5s ease;
+        }
+        
+        /* Modal Animation */
+        .modal-enter {
+            opacity: 0;
+            transform: scale(0.95);
+        }
+        .modal-enter-active {
+            opacity: 1;
+            transform: scale(1);
+            transition: all 0.2s ease-out;
+        }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden text-gray-800">
+
+    <header class="bg-white shadow-sm border-b border-gray-200 z-10 relative">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-2 text-indigo-600">
+                <i class="fa-solid fa-users-viewfinder text-2xl"></i>
+                <h1 class="font-bold text-xl tracking-tight text-gray-900">Seating<span class="text-indigo-600">Sync</span></h1>
+            </div>
+            
+            <div class="flex items-center gap-4">
+                <div id="sync-status" class="flex items-center gap-2 text-sm text-gray-500">
+                    <div class="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></div>
+                    連線中...
+                </div>
+                <div class="h-6 w-px bg-gray-300"></div>
+                <div class="flex items-center bg-gray-100 rounded-lg p-1 border border-gray-200">
+                    <button id="role-teacher-btn" class="px-3 py-1.5 text-sm font-medium rounded-md shadow-sm bg-white text-gray-900" onclick="setRole('teacher')">
+                        <i class="fa-solid fa-chalkboard-user mr-1"></i> 教師
+                    </button>
+                    <button id="role-student-btn" class="px-3 py-1.5 text-sm font-medium rounded-md text-gray-500 hover:text-gray-900" onclick="setRole('student')">
+                        <i class="fa-solid fa-user-graduate mr-1"></i> 學生
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-1 flex overflow-hidden">
+        
+        <!-- Sidebar: Teacher Controls -->
+        <aside id="teacher-sidebar" class="w-80 bg-white border-r border-gray-200 flex flex-col shadow-[4px_0_24px_rgba(0,0,0,0.02)] z-10 transition-all duration-300">
+            <div class="p-5 flex-1 flex flex-col overflow-hidden">
+                
+                <h2 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">教室設定</h2>
+                
+                <div class="mb-6 bg-gray-50 p-4 rounded-xl border border-gray-100">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">黑板位置</label>
+                    <div class="flex rounded-lg overflow-hidden border border-gray-300">
+                        <button id="bb-top-btn" class="flex-1 py-2 text-sm font-medium bg-indigo-50 text-indigo-700 border-r border-gray-300" onclick="toggleBlackboard('top')">
+                            <i class="fa-solid fa-arrow-up mr-1"></i> 朝上
+                        </button>
+                        <button id="bb-bottom-btn" class="flex-1 py-2 text-sm font-medium bg-white text-gray-600 hover:bg-gray-50" onclick="toggleBlackboard('bottom')">
+                            <i class="fa-solid fa-arrow-down mr-1"></i> 朝下
+                        </button>
+                    </div>
+                </div>
+
+                <div class="mb-6">
+                    <label for="batch-input" class="block text-sm font-medium text-gray-700 mb-2">批次新增學生</label>
+                    <textarea id="batch-input" rows="4" class="w-full rounded-lg border border-gray-300 p-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 custom-scrollbar resize-none placeholder-gray-400" placeholder="在此貼上學生姓名...&#10;一行一個名字&#10;例如：&#10;王小明&#10;陳小華"></textarea>
+                    <button onclick="batchAddStudents()" class="mt-2 w-full bg-indigo-600 text-white font-medium py-2 px-4 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm flex justify-center items-center gap-2">
+                        <i class="fa-solid fa-user-plus"></i> 產生學生
+                    </button>
+                </div>
+
+                <div class="flex flex-col flex-1 overflow-hidden">
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="text-sm font-bold text-gray-700">未分配座位</h3>
+                        <span id="unassigned-count" class="bg-gray-200 text-gray-700 text-xs py-0.5 px-2 rounded-full font-medium">0</span>
+                    </div>
+                    <!-- Unassigned Drop Zone -->
+                    <div id="unassigned-zone" class="flex-1 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 p-3 overflow-y-auto custom-scrollbar flex flex-wrap content-start gap-2" ondragover="allowDrop(event)" ondrop="handleDrop(event, null)">
+                        <!-- Student pills will be injected here -->
+                    </div>
+                </div>
+                
+                <button onclick="clearAllData()" class="mt-4 w-full bg-white border border-red-200 text-red-600 font-medium py-2 px-4 rounded-lg hover:bg-red-50 transition-colors text-sm">
+                    <i class="fa-solid fa-trash-can mr-1"></i> 清空教室
+                </button>
+            </div>
+        </aside>
+
+        <section class="flex-1 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMiIgY3k9IjIiIHI9IjEiIGZpbGw9IiNlNWU3ZWIiLz48L3N2Zz4=')] overflow-auto custom-scrollbar flex justify-center items-start p-8">
+            
+            <div id="classroom-container" class="flex flex-col items-center gap-10 w-full max-w-5xl flip-transition relative">
+                
+                <!-- Blackboard -->
+                <div id="blackboard" class="w-3/4 max-w-2xl h-24 bg-chalkboard rounded-lg shadow-lg border-4 border-wood-600 flex items-center justify-center relative flex-shrink-0">
+                    <div class="absolute bottom-1 right-2 w-10 h-3 bg-gray-200 rounded shadow-sm opacity-80"></div>
+                    <span class="text-white/80 font-medium tracking-widest uppercase text-xl">黑板 (教室前方)</span>
+                </div>
+
+                <!-- Desks Grid (5 rows x 3 cols) -->
+                <div id="desks-grid" class="w-full flex flex-col gap-12">
+                    <!-- Rows injected by JS -->
+                </div>
+
+            </div>
+
+        </section>
+    </main>
+
+    <div id="custom-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 backdrop-blur-sm transition-opacity">
+        <div class="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4 transform modal-enter" id="modal-content">
+            <h3 class="text-lg font-bold text-gray-900 mb-2" id="modal-title">提示</h3>
+            <p class="text-gray-600 text-sm mb-6" id="modal-message">訊息內容</p>
+            <div class="flex justify-end gap-3" id="modal-actions">
+                <button onclick="closeModal()" class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">取消</button>
+                <button id="modal-confirm-btn" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700">確定</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Environment variables provided by the platform
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'demo-classroom-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+            // Dummy config to prevent crash if running outside environment
+            apiKey: "dummy", projectId: "dummy"
+        };
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // Initialize Firebase
+        let app, db, auth;
+        try {
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+        } catch (e) {
+            console.error("Firebase Init Error", e);
+        }
+
+        // App State
+        let state = {
+            blackboard: 'top', // 'top' | 'bottom'
+            students: {} // Map of { id: { name, seatId } }
+        };
+        let currentRole = 'teacher'; // 'teacher' | 'student'
+        let unsubscribeSnapshot = null;
+
+        // Constants
+        const ROWS = 5;
+        const DESKS_PER_ROW = 3;
+        const SEATS_PER_DESK = 3;
+
+        
+        // 1. Generate Classroom Layout
+        function generateClassroom() {
+            const grid = document.getElementById('desks-grid');
+            grid.innerHTML = ''; // Clear
+
+            for (let r = 0; r < ROWS; r++) {
+                const rowDiv = document.createElement('div');
+                rowDiv.className = 'flex justify-center gap-8 md:gap-16 w-full';
+                
+                for (let d = 0; d < DESKS_PER_ROW; d++) {
+                    const deskDiv = document.createElement('div');
+                    // Desks are flex columns. If bb is top, seats are below desk. If bottom, seats are above.
+                    deskDiv.className = `flex flex-col items-center gap-2 desk-container ${state.blackboard === 'bottom' ? 'flex-col-reverse' : ''}`;
+                    deskDiv.id = `desk-r${r}-d${d}`;
+
+                    // The actual desk table
+                    const table = document.createElement('div');
+                    table.className = 'w-32 h-12 bg-wood-400 border-2 border-wood-600 rounded shadow-md relative overflow-hidden';
+                    // Wood texture line
+                    table.innerHTML = '<div class="absolute inset-0 opacity-20 bg-[repeating-linear-gradient(45deg,transparent,transparent_4px,#000_4px,#000_5px)]"></div>';
+
+                    // Seats container
+                    const seatsDiv = document.createElement('div');
+                    seatsDiv.className = 'flex gap-2';
+
+                    for (let s = 0; s < SEATS_PER_DESK; s++) {
+                        const seatId = `seat-r${r}-d${d}-s${s}`;
+                        const seat = document.createElement('div');
+                        seat.className = 'w-10 h-10 rounded-full border-2 border-gray-300 bg-white shadow-sm flex items-center justify-center seat-slot relative';
+                        seat.id = seatId;
+                        
+                        // Drag & Drop Events
+                        seat.ondragover = window.allowDrop;
+                        seat.ondrop = (e) => window.handleDrop(e, seatId);
+                        seat.ondragenter = (e) => {
+                            if(currentRole === 'teacher') e.currentTarget.classList.add('drag-over');
+                        };
+                        seat.ondragleave = (e) => {
+                            e.currentTarget.classList.remove('drag-over');
+                        };
+
+                        seatsDiv.appendChild(seat);
+                    }
+
+                    deskDiv.appendChild(table);
+                    deskDiv.appendChild(seatsDiv);
+                    rowDiv.appendChild(deskDiv);
+                }
+                grid.appendChild(rowDiv);
+            }
+        }
+
+        function renderStudents() {
+            // Clear all current students from seats and unassigned
+            document.querySelectorAll('.seat-slot').forEach(slot => slot.innerHTML = '');
+            const unassignedZone = document.getElementById('unassigned-zone');
+            unassignedZone.innerHTML = '';
+
+            let unassignedCount = 0;
+
+            Object.entries(state.students).forEach(([id, student]) => {
+                const pill = document.createElement('div');
+                pill.className = `student-pill shadow-sm border border-gray-200 bg-white rounded-md flex items-center justify-center text-xs font-semibold text-gray-700 truncate px-2 select-none z-10 hover:border-indigo-300 hover:shadow-md ${currentRole === 'teacher' ? 'cursor-grab' : 'cursor-default'}`;
+                pill.id = `student-${id}`;
+                pill.textContent = student.name;
+                pill.title = student.name; // tooltip
+
+                if (currentRole === 'teacher') {
+                    pill.draggable = true;
+                    pill.ondragstart = (e) => {
+                        e.dataTransfer.setData('text/plain', id);
+                        setTimeout(() => pill.classList.add('dragging'), 0);
+                    };
+                    pill.ondragend = () => {
+                        pill.classList.remove('dragging');
+                        document.querySelectorAll('.seat-slot').forEach(s => s.classList.remove('drag-over'));
+                    };
+                }
+
+                if (student.seatId && document.getElementById(student.seatId)) {
+                    // Place in seat
+                    pill.classList.add('w-12', 'h-12', 'rounded-full', '!text-[10px]', 'text-center', 'break-words', 'leading-tight');
+                    document.getElementById(student.seatId).appendChild(pill);
+                } else {
+                    // Place in unassigned
+                    unassignedCount++;
+                    pill.classList.add('py-1.5', 'px-3');
+                    unassignedZone.appendChild(pill);
+                }
+            });
+
+            document.getElementById('unassigned-count').innerText = unassignedCount;
+        }
+
+        function updateLayout() {
+            const container = document.getElementById('classroom-container');
+            const bbTopBtn = document.getElementById('bb-top-btn');
+            const bbBottomBtn = document.getElementById('bb-bottom-btn');
+
+            if (state.blackboard === 'bottom') {
+                container.classList.add('flex-col-reverse');
+                bbBottomBtn.classList.replace('bg-white', 'bg-indigo-50');
+                bbBottomBtn.classList.replace('text-gray-600', 'text-indigo-700');
+                bbTopBtn.classList.replace('bg-indigo-50', 'bg-white');
+                bbTopBtn.classList.replace('text-indigo-700', 'text-gray-600');
+            } else {
+                container.classList.remove('flex-col-reverse');
+                bbTopBtn.classList.replace('bg-white', 'bg-indigo-50');
+                bbTopBtn.classList.replace('text-gray-600', 'text-indigo-700');
+                bbBottomBtn.classList.replace('bg-indigo-50', 'bg-white');
+                bbBottomBtn.classList.replace('text-indigo-700', 'text-gray-600');
+            }
+
+            // Flip desk seats relative to desk table
+            document.querySelectorAll('.desk-container').forEach(desk => {
+                if (state.blackboard === 'bottom') {
+                    desk.classList.add('flex-col-reverse');
+                } else {
+                    desk.classList.remove('flex-col-reverse');
+                }
+            });
+        }
+
+        window.allowDrop = function(ev) {
+            if (currentRole !== 'teacher') return;
+            ev.preventDefault(); // allow drop
+        };
+
+        window.handleDrop = function(ev, targetSeatId) {
+            if (currentRole !== 'teacher') return;
+            ev.preventDefault();
+            
+            // Remove hover states
+            document.querySelectorAll('.seat-slot').forEach(s => s.classList.remove('drag-over'));
+
+            const studentId = ev.dataTransfer.getData('text/plain');
+            if (!studentId || !state.students[studentId]) return;
+
+            // Check if target seat is already occupied
+            if (targetSeatId) {
+                const targetElement = document.getElementById(targetSeatId);
+                if (targetElement.children.length > 0) {
+                    showModal('座位已被佔用', '此座位已經有學生了，請先將其移開。');
+                    return;
+                }
+            }
+
+            // Update local state
+            state.students[studentId].seatId = targetSeatId;
+            
+            // Save & Re-render
+            saveToFirebase();
+            renderStudents();
+        };
+
+        window.toggleBlackboard = function(pos) {
+            if (currentRole !== 'teacher' || state.blackboard === pos) return;
+            state.blackboard = pos;
+            updateLayout();
+            saveToFirebase();
+        };
+
+        window.batchAddStudents = function() {
+            const input = document.getElementById('batch-input').value;
+            if (!input.trim()) return;
+
+            const names = input.split('\n').map(n => n.trim()).filter(n => n.length > 0);
+            
+            let added = 0;
+            names.forEach(name => {
+                const newId = 's_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+                state.students[newId] = {
+                    name: name,
+                    seatId: null
+                };
+                added++;
+            });
+
+            if (added > 0) {
+                document.getElementById('batch-input').value = '';
+                saveToFirebase();
+                renderStudents();
+            }
+        };
+
+        window.clearAllData = function() {
+            showModal('清空教室', '確定要移除所有學生並重置座位表嗎？此操作無法復原。', () => {
+                state.students = {};
+                state.blackboard = 'top';
+                saveToFirebase();
+                updateLayout();
+                renderStudents();
+            }, true);
+        };
+
+        window.setRole = function(role) {
+            currentRole = role;
+            
+            const teacherBtn = document.getElementById('role-teacher-btn');
+            const studentBtn = document.getElementById('role-student-btn');
+            const sidebar = document.getElementById('teacher-sidebar');
+            
+            if (role === 'teacher') {
+                teacherBtn.className = "px-3 py-1.5 text-sm font-medium rounded-md shadow-sm bg-white text-gray-900";
+                studentBtn.className = "px-3 py-1.5 text-sm font-medium rounded-md text-gray-500 hover:text-gray-900";
+                sidebar.classList.remove('hidden');
+            } else {
+                studentBtn.className = "px-3 py-1.5 text-sm font-medium rounded-md shadow-sm bg-white text-gray-900";
+                teacherBtn.className = "px-3 py-1.5 text-sm font-medium rounded-md text-gray-500 hover:text-gray-900";
+                sidebar.classList.add('hidden');
+            }
+
+            renderStudents(); // Re-render to toggle draggability
+        };
+
+        let currentModalAction = null;
+        window.showModal = function(title, message, onConfirm = null, showCancel = false) {
+            document.getElementById('modal-title').innerText = title;
+            document.getElementById('modal-message').innerText = message;
+            
+            const customModal = document.getElementById('custom-modal');
+            const actionsDiv = document.getElementById('modal-actions');
+            const confirmBtn = document.getElementById('modal-confirm-btn');
+            
+            actionsDiv.innerHTML = '';
+            
+            if (showCancel) {
+                const cancelBtn = document.createElement('button');
+                cancelBtn.innerText = '取消';
+                cancelBtn.className = 'px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200';
+                cancelBtn.onclick = closeModal;
+                actionsDiv.appendChild(cancelBtn);
+            }
+
+            const confirmClass = showCancel ? 'bg-red-600 hover:bg-red-700 focus:ring-red-500' : 'bg-indigo-600 hover:bg-indigo-700 focus:ring-indigo-500';
+            const actionBtn = document.createElement('button');
+            actionBtn.innerText = showCancel ? '繼續' : '確定';
+            actionBtn.className = `px-4 py-2 text-sm font-medium text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 ${confirmClass}`;
+            
+            actionBtn.onclick = () => {
+                if (onConfirm) onConfirm();
+                closeModal();
+            };
+            
+            actionsDiv.appendChild(actionBtn);
+
+            customModal.classList.remove('hidden');
+            customModal.classList.add('flex');
+            setTimeout(() => {
+                document.getElementById('modal-content').classList.remove('opacity-0', 'scale-95');
+            }, 10);
+        };
+
+        window.closeModal = function() {
+            const customModal = document.getElementById('custom-modal');
+            document.getElementById('modal-content').classList.add('opacity-0', 'scale-95');
+            setTimeout(() => {
+                customModal.classList.add('hidden');
+                customModal.classList.remove('flex');
+            }, 200);
+        };
+
+        function setSyncStatus(status) {
+            const el = document.getElementById('sync-status');
+            if (status === 'syncing') {
+                el.innerHTML = '<div class="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></div> 同步中...';
+            } else if (status === 'online') {
+                el.innerHTML = '<div class="w-2 h-2 rounded-full bg-green-500"></div> 即時同步中';
+            } else if (status === 'error') {
+                el.innerHTML = '<div class="w-2 h-2 rounded-full bg-red-500"></div> 離線';
+            }
+        }
+
+        async function saveToFirebase() {
+            if (!auth.currentUser) return;
+            setSyncStatus('syncing');
+            try {
+                // Rule 1 strictly followed: artifacts/{appId}/public/data/{collectionName}
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'seating_chart', 'main');
+                await setDoc(docRef, state);
+                setSyncStatus('online');
+            } catch (e) {
+                console.error("Save Error", e);
+                setSyncStatus('error');
+            }
+        }
+
+        function listenToFirebase() {
+            if (!auth.currentUser) return;
+            
+            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'seating_chart', 'main');
+            setSyncStatus('syncing');
+
+            unsubscribeSnapshot = onSnapshot(docRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    state.blackboard = data.blackboard || 'top';
+                    state.students = data.students || {};
+                    updateLayout();
+                    renderStudents();
+                } else {
+                    // Document doesn't exist yet, save initial state
+                    saveToFirebase();
+                }
+                setSyncStatus('online');
+            }, (error) => {
+                console.error("Listen Error", error);
+                setSyncStatus('error');
+            });
+        }
+
+        window.onload = async () => {
+            generateClassroom();
+            updateLayout();
+            
+            try {
+                // Rule 3 strictly followed: Auth before queries
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        listenToFirebase();
+                    }
+                });
+            } catch (e) {
+                console.error("Auth Error", e);
+                setSyncStatus('error');
+                // Even if offline, we can render the initial mock UI
+                renderStudents();
+            }
+        };
+
+    </script>
+</body>
+</html>
